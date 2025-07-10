@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Celery Pipeline Monitor</title>
+    <title>Interactive Celery Pipeline</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen py-8">
     <div class="container mx-auto px-4 max-w-4xl">
-        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Celery Pipeline Monitor</h1>
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Интерактивный Celery Pipeline</h1>
         
         <!-- Управление пайплайном -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-4 text-gray-700">Запуск пайплайна обработки данных</h2>
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Запуск интерактивного пайплайна</h2>
             <div class="flex gap-4 items-end">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Размер данных:</label>
@@ -36,11 +36,19 @@
             </div>
         </div>
         
+        <!-- Форма пользовательского ввода -->
+        <div id="input-form" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+            <h2 class="text-xl font-semibold mb-4 text-orange-600">Требуется ваш ввод</h2>
+            <div id="input-content">
+                <!-- Динамически заполняется -->
+            </div>
+        </div>
+        
         <!-- Результаты выполнения -->
         <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-700">Результаты выполнения задач:</h2>
             <div id="results-container" class="space-y-3">
-                <p class="text-gray-500 italic">Запустите пайплайн для просмотра результатов</p>
+                <p class="text-gray-500 italic">Запустите интерактивный пайплайн для просмотра результатов</p>
             </div>
         </div>
     </div>
@@ -48,6 +56,7 @@
     <script>
         const socket = io();
         let taskCount = 0;
+        let currentTaskId = null;
 
         // Подключение к WebSocket
         socket.on('connect', function() {
@@ -62,6 +71,11 @@
 
         // Получение обновлений задач
         socket.on('task_update', function(data) {
+            if (data.status === 'input_required') {
+                showInputForm(data.request_input);
+            } else {
+                hideInputForm();
+            }
             addTaskResult(data);
         });
 
@@ -80,9 +94,10 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
+                    currentTaskId = data.task_id;
                     addTaskResult({
                         task_name: 'Система',
-                        result: `Пайплайн запущен (ID: ${data.task_id})`,
+                        result: `Интерактивный пайплайн запущен (ID: ${data.task_id})`,
                         status: 'start',
                         timestamp: new Date().toISOString()
                     });
@@ -97,6 +112,79 @@
                 
                 button.disabled = false;
                 button.textContent = 'Запустить пайплайн';
+            });
+        }
+
+        function showInputForm(inputRequest) {
+            const form = document.getElementById('input-form');
+            const content = document.getElementById('input-content');
+            
+            let inputHtml = `
+                <p class="mb-4 text-gray-700">${inputRequest.prompt}</p>
+                <div class="mb-4">
+            `;
+            
+            if (inputRequest.input_type === 'select') {
+                inputHtml += `
+                    <select id="user-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500">
+                        ${inputRequest.options.map(option => `<option value="${option}">${option}</option>`).join('')}
+                    </select>
+                `;
+            } else if (inputRequest.input_type === 'number') {
+                inputHtml += `
+                    <input type="number" id="user-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Введите число">
+                `;
+            } else {
+                inputHtml += `
+                    <input type="text" id="user-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Введите текст">
+                `;
+            }
+            
+            inputHtml += `
+                </div>
+                <button onclick="submitInput('${inputRequest.task_id}')" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-md transition-colors">
+                    Отправить
+                </button>
+            `;
+            
+            content.innerHTML = inputHtml;
+            form.classList.remove('hidden');
+        }
+
+        function hideInputForm() {
+            document.getElementById('input-form').classList.add('hidden');
+        }
+
+        function submitInput(taskId) {
+            const inputElement = document.getElementById('user-input');
+            const userInput = inputElement.value;
+            
+            if (!userInput.trim()) {
+                alert('Пожалуйста, введите значение');
+                return;
+            }
+            
+            fetch('/submit_input', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    task_id: taskId,
+                    input: userInput
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    hideInputForm();
+                    addTaskResult({
+                        task_name: 'Пользовательский ввод',
+                        result: `Отправлено: ${userInput}`,
+                        status: 'success',
+                        timestamp: new Date().toISOString()
+                    });
+                } else {
+                    alert('Ошибка отправки ввода: ' + data.error);
+                }
             });
         }
 
@@ -129,6 +217,10 @@
                     statusClass = 'bg-red-50 border-red-200 text-red-800';
                     statusIcon = '❌';
                     break;
+                case 'input_required':
+                    statusClass = 'bg-orange-50 border-orange-200 text-orange-800';
+                    statusIcon = '⏸️';
+                    break;
                 default:
                     statusClass = 'bg-gray-50 border-gray-200 text-gray-800';
                     statusIcon = 'ℹ️';
@@ -158,8 +250,9 @@
 
         function clearResults() {
             taskCount = 0;
+            hideInputForm();
             document.getElementById('results-container').innerHTML = 
-                '<p class="text-gray-500 italic">Запустите пайплайн для просмотра результатов</p>';
+                '<p class="text-gray-500 italic">Запустите интерактивный пайплайн для просмотра результатов</p>';
         }
     </script>
 </body>

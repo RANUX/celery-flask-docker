@@ -1,14 +1,19 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
+import redis
+import json
 import sys
 import os
 
 sys.path.append('../app')
-from tasks import run_data_pipeline
+from tasks import run_interactive_pipeline
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Redis для хранения пользовательского ввода
+redis_client = redis.Redis.from_url(os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"))
 
 @app.route('/')
 def index():
@@ -16,17 +21,17 @@ def index():
 
 @app.route('/start_pipeline', methods=['POST'])
 def start_pipeline():
-    """Запускает пайплайн обработки данных"""
+    """Запускает интерактивный пайплайн обработки данных"""
     try:
         data = request.json
         data_size = int(data.get('data_size', 100))
         
-        task_id = run_data_pipeline.delay(data_size)
+        task_id = run_interactive_pipeline.delay(data_size)
         
         return jsonify({
             'success': True,
             'task_id': str(task_id),
-            'message': 'Пайплайн запущен'
+            'message': 'Интерактивный пайплайн запущен'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
@@ -43,10 +48,27 @@ def receive_task_result():
             'result': data.get('result'),
             'status': data.get('status'),
             'timestamp': data.get('timestamp'),
-            'error': data.get('error')
+            'error': data.get('error'),
+            'request_input': data.get('request_input')
         })
         
         return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/submit_input', methods=['POST'])
+def submit_input():
+    """Принимает пользовательский ввод и передает его задаче"""
+    try:
+        data = request.json
+        task_id = data.get('task_id')
+        user_input = data.get('input')
+        
+        # Сохраняем ввод пользователя в Redis
+        input_key = f"user_input:{task_id}"
+        redis_client.set(input_key, json.dumps(user_input), ex=300)  # 5 минут TTL
+        
+        return jsonify({'success': True, 'message': 'Ввод принят'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
