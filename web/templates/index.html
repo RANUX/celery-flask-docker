@@ -3,166 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Celery Task Manager</title>
+    <title>Celery Pipeline Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
 </head>
 <body class="bg-gray-100 min-h-screen py-8">
     <div class="container mx-auto px-4 max-w-4xl">
-        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Celery Task Manager</h1>
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Celery Pipeline Monitor</h1>
         
-        <!-- Выбор задачи -->
+        <!-- Управление пайплайном -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-            <h2 class="text-xl font-semibold mb-4 text-gray-700">Выберите задачу:</h2>
-            
-            <!-- Задача сложения -->
-            <div class="mb-6 p-4 border border-gray-200 rounded-lg">
-                <h3 class="text-lg font-medium mb-3 text-blue-600">Сложение чисел</h3>
-                <div class="flex gap-4 items-end">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Число X:</label>
-                        <input type="number" id="add-x" class="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value="2">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Число Y:</label>
-                        <input type="number" id="add-y" class="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value="3">
-                    </div>
-                    <button onclick="executeAdd()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-colors">
-                        Выполнить
-                    </button>
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Запуск пайплайна обработки данных</h2>
+            <div class="flex gap-4 items-end">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Размер данных:</label>
+                    <input type="number" id="data-size" class="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value="100" min="10" max="1000">
                 </div>
-            </div>
-            
-            <!-- Задача ожидания -->
-            <div class="mb-6 p-4 border border-gray-200 rounded-lg">
-                <h3 class="text-lg font-medium mb-3 text-green-600">Ожидание</h3>
-                <div class="flex gap-4 items-end">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Секунды:</label>
-                        <input type="number" id="sleep-seconds" class="w-20 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500" value="2" min="1" max="10">
-                    </div>
-                    <button onclick="executeSleep()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md transition-colors">
-                        Выполнить
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Задача эхо -->
-            <div class="mb-6 p-4 border border-gray-200 rounded-lg">
-                <h3 class="text-lg font-medium mb-3 text-purple-600">Эхо сообщения</h3>
-                <div class="flex gap-4 items-end">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Сообщение:</label>
-                        <input type="text" id="echo-message" class="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500" value="Hello Celery!">
-                    </div>
-                    <div class="flex items-center">
-                        <input type="checkbox" id="echo-timestamp" class="mr-2">
-                        <label class="text-sm text-gray-700">С временной меткой</label>
-                    </div>
-                    <button onclick="executeEcho()" class="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-md transition-colors">
-                        Выполнить
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Задача ошибки -->
-            <div class="mb-6 p-4 border border-gray-200 rounded-lg">
-                <h3 class="text-lg font-medium mb-3 text-red-600">Генерация ошибки</h3>
-                <div class="flex gap-4 items-end">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Сообщение об ошибке:</label>
-                        <input type="text" id="error-message" class="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500" value="Test error">
-                    </div>
-                    <button onclick="executeError()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md transition-colors">
-                        Выполнить
-                    </button>
-                </div>
+                <button onclick="startPipeline()" id="start-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors">
+                    Запустить пайплайн
+                </button>
+                <button onclick="clearResults()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors">
+                    Очистить
+                </button>
             </div>
         </div>
         
-        <!-- Результат выполнения -->
+        <!-- Статус подключения -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex items-center">
+                <div id="connection-status" class="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
+                <span id="connection-text" class="text-gray-600">Подключение...</span>
+            </div>
+        </div>
+        
+        <!-- Результаты выполнения -->
         <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-semibold mb-4 text-gray-700">Результат выполнения:</h2>
-            <div id="result-container" class="min-h-20 p-4 bg-gray-50 border border-gray-200 rounded-md">
-                <p class="text-gray-500 italic">Выберите и выполните задачу для просмотра результата</p>
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">Результаты выполнения задач:</h2>
+            <div id="results-container" class="space-y-3">
+                <p class="text-gray-500 italic">Запустите пайплайн для просмотра результатов</p>
             </div>
         </div>
     </div>
 
     <script>
-        function showLoading() {
-            document.getElementById('result-container').innerHTML = 
-                '<div class="flex items-center"><div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mr-3"></div><span class="text-blue-600">Выполняется задача...</span></div>';
+        const socket = io();
+        let taskCount = 0;
+
+        // Подключение к WebSocket
+        socket.on('connect', function() {
+            document.getElementById('connection-status').className = 'w-3 h-3 bg-green-500 rounded-full mr-3';
+            document.getElementById('connection-text').textContent = 'Подключено';
+        });
+
+        socket.on('disconnect', function() {
+            document.getElementById('connection-status').className = 'w-3 h-3 bg-red-500 rounded-full mr-3';
+            document.getElementById('connection-text').textContent = 'Отключено';
+        });
+
+        // Получение обновлений задач
+        socket.on('task_update', function(data) {
+            addTaskResult(data);
+        });
+
+        function startPipeline() {
+            const dataSize = document.getElementById('data-size').value;
+            const button = document.getElementById('start-btn');
+            
+            button.disabled = true;
+            button.textContent = 'Запускается...';
+            
+            fetch('/start_pipeline', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({data_size: parseInt(dataSize)})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    addTaskResult({
+                        task_name: 'Система',
+                        result: `Пайплайн запущен (ID: ${data.task_id})`,
+                        status: 'start',
+                        timestamp: new Date().toISOString()
+                    });
+                } else {
+                    addTaskResult({
+                        task_name: 'Система',
+                        result: `Ошибка: ${data.error}`,
+                        status: 'error',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+                
+                button.disabled = false;
+                button.textContent = 'Запустить пайплайн';
+            });
         }
 
-        function showResult(data) {
-            const container = document.getElementById('result-container');
-            if (data.success) {
-                container.innerHTML = 
-                    `<div class="text-green-700">
-                        <strong>Успешно выполнено!</strong><br>
-                        <strong>Результат:</strong> ${data.result}<br>
-                        <strong>ID задачи:</strong> ${data.task_id}
-                    </div>`;
-            } else {
-                container.innerHTML = 
-                    `<div class="text-red-700">
-                        <strong>Ошибка:</strong> ${data.error}
-                    </div>`;
+        function addTaskResult(data) {
+            taskCount++;
+            const container = document.getElementById('results-container');
+            
+            // Удаляем сообщение-заглушку при первом результате
+            if (taskCount === 1) {
+                container.innerHTML = '';
             }
+            
+            const timestamp = new Date(data.timestamp).toLocaleTimeString();
+            let statusClass, statusIcon;
+            
+            switch(data.status) {
+                case 'start':
+                    statusClass = 'bg-blue-50 border-blue-200 text-blue-800';
+                    statusIcon = '🚀';
+                    break;
+                case 'progress':
+                    statusClass = 'bg-yellow-50 border-yellow-200 text-yellow-800';
+                    statusIcon = '⏳';
+                    break;
+                case 'success':
+                    statusClass = 'bg-green-50 border-green-200 text-green-800';
+                    statusIcon = '✅';
+                    break;
+                case 'error':
+                    statusClass = 'bg-red-50 border-red-200 text-red-800';
+                    statusIcon = '❌';
+                    break;
+                default:
+                    statusClass = 'bg-gray-50 border-gray-200 text-gray-800';
+                    statusIcon = 'ℹ️';
+            }
+            
+            const resultElement = document.createElement('div');
+            resultElement.className = `p-4 border rounded-lg ${statusClass}`;
+            resultElement.innerHTML = `
+                <div class="flex items-start">
+                    <span class="text-lg mr-3">${statusIcon}</span>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-start">
+                            <strong>${data.task_name}</strong>
+                            <span class="text-sm opacity-75">${timestamp}</span>
+                        </div>
+                        <div class="mt-1">${data.result}</div>
+                        ${data.error ? `<div class="mt-2 text-sm opacity-75">Ошибка: ${data.error}</div>` : ''}
+                    </div>
+                </div>
+            `;
+            
+            container.appendChild(resultElement);
+            
+            // Автоскролл к последнему результату
+            resultElement.scrollIntoView({ behavior: 'smooth' });
         }
 
-        function executeAdd() {
-            showLoading();
-            const x = document.getElementById('add-x').value;
-            const y = document.getElementById('add-y').value;
-            
-            fetch('/execute_task', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task: 'add', x: x, y: y})
-            })
-            .then(response => response.json())
-            .then(data => showResult(data));
-        }
-
-        function executeSleep() {
-            showLoading();
-            const seconds = document.getElementById('sleep-seconds').value;
-            
-            fetch('/execute_task', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task: 'sleep', seconds: seconds})
-            })
-            .then(response => response.json())
-            .then(data => showResult(data));
-        }
-
-        function executeEcho() {
-            showLoading();
-            const message = document.getElementById('echo-message').value;
-            const timestamp = document.getElementById('echo-timestamp').checked;
-            
-            fetch('/execute_task', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task: 'echo', message: message, timestamp: timestamp})
-            })
-            .then(response => response.json())
-            .then(data => showResult(data));
-        }
-
-        function executeError() {
-            showLoading();
-            const errorMessage = document.getElementById('error-message').value;
-            
-            fetch('/execute_task', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task: 'error', error_message: errorMessage})
-            })
-            .then(response => response.json())
-            .then(data => showResult(data));
+        function clearResults() {
+            taskCount = 0;
+            document.getElementById('results-container').innerHTML = 
+                '<p class="text-gray-500 italic">Запустите пайплайн для просмотра результатов</p>';
         }
     </script>
 </body>

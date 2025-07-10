@@ -1,69 +1,63 @@
 from flask import Flask, render_template, request, jsonify
+from flask_socketio import SocketIO, emit
 import sys
+import os
 
 sys.path.append('../app')
-
-from tasks import add, sleep, echo, error
+from tasks import run_data_pipeline
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'your-secret-key'
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/execute_task', methods=['POST'])
-def execute_task():
-    data = request.json
-    task_name = data.get('task')
-    
+@app.route('/start_pipeline', methods=['POST'])
+def start_pipeline():
+    """Запускает пайплайн обработки данных"""
     try:
-        if task_name == 'add':
-            x = int(data.get('x', 0))
-            y = int(data.get('y', 0))
-            result = add.delay(x, y)
-            task_result = result.get(timeout=30)
-            return jsonify({
-                'success': True, 
-                'result': task_result,
-                'task_id': result.id
-            })
-            
-        elif task_name == 'sleep':
-            seconds = int(data.get('seconds', 1))
-            result = sleep.delay(seconds)
-            task_result = result.get(timeout=60)
-            return jsonify({
-                'success': True, 
-                'result': f'Задача завершена после {seconds} секунд',
-                'task_id': result.id
-            })
-            
-        elif task_name == 'echo':
-            msg = data.get('message', 'Hello World')
-            timestamp = data.get('timestamp', False)
-            result = echo.delay(msg, timestamp)
-            task_result = result.get(timeout=30)
-            return jsonify({
-                'success': True, 
-                'result': task_result,
-                'task_id': result.id
-            })
-            
-        elif task_name == 'error':
-            msg = data.get('error_message', 'Test error')
-            result = error.delay(msg)
-            task_result = result.get(timeout=30)
-            return jsonify({
-                'success': True, 
-                'result': task_result,
-                'task_id': result.id
-            })
-            
-        else:
-            return jsonify({'success': False, 'error': 'Неизвестная задача'})
-            
+        data = request.json
+        data_size = int(data.get('data_size', 100))
+        
+        task_id = run_data_pipeline.delay(data_size)
+        
+        return jsonify({
+            'success': True,
+            'task_id': str(task_id),
+            'message': 'Пайплайн запущен'
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/task_result', methods=['POST'])
+def receive_task_result():
+    """Получает результаты от Celery задач и отправляет через WebSocket"""
+    try:
+        data = request.json
+        
+        # Отправляем результат всем подключенным клиентам
+        socketio.emit('task_update', {
+            'task_name': data.get('task_name'),
+            'result': data.get('result'),
+            'status': data.get('status'),
+            'timestamp': data.get('timestamp'),
+            'error': data.get('error')
+        })
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@socketio.on('connect')
+def handle_connect():
+    print('Клиент подключился')
+    emit('connected', {'message': 'Подключение установлено'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Клиент отключился')
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    socketio.run(app, host='0.0.0.0', port=8000, debug=True, allow_unsafe_werkzeug=True)
