@@ -4,6 +4,8 @@ import redis
 import json
 import sys
 import os
+import threading
+import time
 
 sys.path.append('../app')
 from tasks import run_interactive_pipeline
@@ -14,6 +16,10 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Redis для хранения пользовательского ввода
 redis_client = redis.Redis.from_url(os.environ.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0"))
+
+# Хранилище активных сессий
+active_sessions = {}
+session_lock = threading.Lock()
 
 @app.route('/')
 def index():
@@ -49,7 +55,8 @@ def receive_task_result():
             'status': data.get('status'),
             'timestamp': data.get('timestamp'),
             'error': data.get('error'),
-            'request_input': data.get('request_input')
+            'request_input': data.get('request_input'),
+            'progress_info': data.get('progress_info')
         })
         
         return jsonify({'success': True})
@@ -74,12 +81,40 @@ def submit_input():
 
 @socketio.on('connect')
 def handle_connect():
-    print('Клиент подключился')
-    emit('connected', {'message': 'Подключение установлено'})
+    session_id = request.sid
+    with session_lock:
+        active_sessions[session_id] = {
+            'connected_at': time.time(),
+            'last_activity': time.time(),
+            'current_task_id': None
+        }
+    print(f'Клиент подключился: {session_id}')
+    emit('connected', {'message': 'Подключение установлено', 'session_id': session_id})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    print('Клиент отключился')
+    session_id = request.sid
+    with session_lock:
+        if session_id in active_sessions:
+            session_data = active_sessions.pop(session_id)
+            current_task_id = session_data.get('current_task_id')
+            
+            if current_task_id:
+                # Отправляем сигнал об отключении в Redis
+                cancel_user_input(current_task_id)
+                print(f'Клиент отключился, отменяем задачу: {current_task_id}')
+    
+    print(f'Клиент отключился: {session_id}')
+
+def cancel_user_input(task_id):
+    """Отменяет ожидание пользовательского ввода"""
+    try:
+        # Отправляем значение по умолчанию в Redis
+        input_key = f"user_input:{task_id}"
+        default_response = "DISCONNECTED"
+        redis_client.set(input_key, json.dumps(default_response), ex=10)
+    except Exception as e:
+        print(f"Ошибка при отмене ввода: {e}")
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=8000, debug=True, allow_unsafe_werkzeug=True)

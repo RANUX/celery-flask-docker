@@ -26,6 +26,7 @@ services:
       - valkey
     environment:
       - CELERY_BROKER_URL=redis://valkey:6379/0
+      - FLOWER_UNAUTHENTICATED_API=true
 
   web:
     build: ./web
