@@ -6,6 +6,7 @@
     <title>Interactive Celery Pipeline</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <style>
         .progress-segment {
             transition: background-color 0.3s ease-in-out;
@@ -21,7 +22,7 @@
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen py-8">
-    <div class="container mx-auto px-4 max-w-4xl">
+    <div class="container mx-auto px-4 max-w-4xl" x-data="pipelineApp()">
         <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Интерактивный Celery Pipeline</h1>
         
         <!-- Управление пайплайном -->
@@ -30,12 +31,24 @@
             <div class="flex gap-4 items-end">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Размер данных:</label>
-                    <input type="number" id="data-size" class="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" value="100" min="10" max="1000">
+                    <input 
+                        type="number" 
+                        x-model="dataSize" 
+                        class="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                        min="10" 
+                        max="1000"
+                    >
                 </div>
-                <button onclick="startPipeline()" id="start-btn" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors">
-                    Запустить пайплайн
-                </button>
-                <button onclick="clearResults()" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors">
+                <button 
+                    @click="startPipeline()" 
+                    :disabled="isStarting"
+                    class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-md transition-colors disabled:opacity-50"
+                    x-text="isStarting ? 'Запускается...' : 'Запустить пайплайн'"
+                ></button>
+                <button 
+                    @click="clearResults()" 
+                    class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-md transition-colors"
+                >
                     Очистить
                 </button>
             </div>
@@ -44,399 +57,472 @@
         <!-- Статус подключения -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <div class="flex items-center">
-                <div id="connection-status" class="w-3 h-3 bg-red-500 rounded-full mr-3"></div>
-                <span id="connection-text" class="text-gray-600">Подключение...</span>
+                <div 
+                    class="w-3 h-3 rounded-full mr-3 transition-colors"
+                    :class="connection.connected ? 'bg-green-500' : 'bg-red-500'"
+                ></div>
+                <span class="text-gray-600" x-text="connection.text"></span>
             </div>
         </div>
         
         <!-- Сегментированный прогресс бар -->
-        <div id="progress-container" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+        <div 
+            x-show="progress.visible" 
+            x-transition
+            class="bg-white rounded-lg shadow-md p-6 mb-6"
+        >
             <h2 class="text-xl font-semibold mb-4 text-gray-700">Прогресс выполнения</h2>
             
             <!-- Общий прогресс с сегментами -->
             <div class="mb-4">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm font-medium text-gray-700">Общий прогресс</span>
-                    <span id="overall-progress-text" class="text-sm text-gray-600">0%</span>
+                    <span class="text-sm text-gray-600" x-text="progress.overall + '%'"></span>
                 </div>
                 <!-- Сегментированный прогресс бар -->
-                <div class="flex space-x-1 h-6 w-full" id="overall-progress-segments">
-                    <!-- Сегменты будут добавлены через JavaScript -->
+                <div class="flex space-x-1 h-6 w-full">
+                    <template x-for="segment in progress.overallSegments" :key="segment.id">
+                        <div 
+                            class="flex-1 h-6 rounded-sm transition-all duration-300 progress-segment"
+                            :class="segment.filled ? (progress.overall >= 100 ? 'bg-green-500 filled' : 'bg-blue-500 filled') : 'bg-gray-200'"
+                        ></div>
+                    </template>
                 </div>
             </div>
             
             <!-- Текущий шаг с сегментами -->
-            <!-- <div class="mb-4">
+            <div class="mb-4">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm font-medium text-gray-700">Текущий шаг</span>
-                    <span id="step-progress-text" class="text-sm text-gray-600">0%</span>
+                    <span class="text-sm text-gray-600" x-text="progress.step + '%'"></span>
                 </div>
                 <!-- Сегментированный прогресс бар для шага -->
-                <!-- <div class="flex space-x-1 h-4 w-full" id="step-progress-segments"> -->
-                    <!-- Сегменты будут добавлены через JavaScript -->
-                <!-- </div>
-            </div>  -->
+                <div class="flex space-x-1 h-4 w-full">
+                    <template x-for="segment in progress.stepSegments" :key="segment.id">
+                        <div 
+                            class="flex-1 h-4 rounded-sm transition-all duration-300 progress-segment"
+                            :class="segment.filled ? 'bg-green-500 filled' : 'bg-gray-200'"
+                        ></div>
+                    </template>
+                </div>
+            </div>
             
             <!-- Индикаторы шагов -->
             <div class="flex justify-between items-center mt-6">
-                <div id="step-1" class="flex flex-col items-center">
-                    <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-white font-medium mb-2">1</div>
-                    <span class="text-xs text-gray-600 text-center">Подготовка<br>данных</span>
-                </div>
-                <div class="flex-1 h-1 bg-gray-300 mx-2"></div>
-                <div id="step-2" class="flex flex-col items-center">
-                    <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-white font-medium mb-2">2</div>
-                    <span class="text-xs text-gray-600 text-center">Обработка<br>данных</span>
-                </div>
-                <div class="flex-1 h-1 bg-gray-300 mx-2"></div>
-                <div id="step-3" class="flex flex-col items-center">
-                    <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-white font-medium mb-2">3</div>
-                    <span class="text-xs text-gray-600 text-center">Анализ<br>данных</span>
-                </div>
-                <div class="flex-1 h-1 bg-gray-300 mx-2"></div>
-                <div id="step-4" class="flex flex-col items-center">
-                    <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-white font-medium mb-2">4</div>
-                    <span class="text-xs text-gray-600 text-center">Генерация<br>отчета</span>
-                </div>
+                <template x-for="step in progress.steps" :key="step.id">
+                    <div class="flex flex-col items-center">
+                        <div 
+                            class="w-8 h-8 rounded-full flex items-center justify-center text-white font-medium mb-2 transition-colors"
+                            :class="getStepClass(step)"
+                            x-text="step.completed ? '✓' : step.id"
+                        ></div>
+                        <span class="text-xs text-gray-600 text-center" x-text="step.name"></span>
+                    </div>
+                    <div 
+                        x-show="step.id < 4" 
+                        class="flex-1 h-1 bg-gray-300 mx-2"
+                    ></div>
+                </template>
             </div>
         </div>
         
         <!-- Форма пользовательского ввода -->
-        <div id="input-form" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+        <div 
+            x-show="input.visible" 
+            x-transition
+            class="bg-white rounded-lg shadow-md p-6 mb-6"
+        >
             <h2 class="text-xl font-semibold mb-4 text-orange-600">Требуется ваш ввод</h2>
-            <div id="input-content">
-                <!-- Динамически заполняется -->
+            <div>
+                <p class="mb-4 text-gray-700" x-text="input.prompt"></p>
+                <div class="mb-4">
+                    <!-- Select input -->
+                    <select 
+                        x-show="input.type === 'select'"
+                        x-model="input.value"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    >
+                        <template x-for="option in input.options" :key="option">
+                            <option :value="option" x-text="option"></option>
+                        </template>
+                    </select>
+                    
+                    <!-- Number input -->
+                    <input 
+                        x-show="input.type === 'number'"
+                        type="number" 
+                        x-model="input.value"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500" 
+                        placeholder="Введите число"
+                    >
+                    
+                    <!-- Text input -->
+                    <input 
+                        x-show="input.type === 'text'"
+                        type="text" 
+                        x-model="input.value"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500" 
+                        placeholder="Введите текст"
+                    >
+                </div>
+                <button 
+                    @click="submitInput()" 
+                    :disabled="!input.value || input.submitting"
+                    class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-md transition-colors disabled:opacity-50"
+                    x-text="input.submitting ? 'Отправляется...' : 'Отправить'"
+                ></button>
             </div>
         </div>
         
         <!-- Результаты выполнения -->
         <div class="bg-white rounded-lg shadow-md p-6">
             <h2 class="text-xl font-semibold mb-4 text-gray-700">Результаты выполнения задач:</h2>
-            <div id="results-container" class="space-y-3">
-                <p class="text-gray-500 italic">Запустите интерактивный пайплайн для просмотра результатов</p>
+            <div class="space-y-3">
+                <template x-for="result in results" :key="result.id">
+                    <div class="p-4 border rounded-lg transition-colors" :class="getResultClass(result.status)">
+                        <div class="flex items-start">
+                            <span class="text-lg mr-3" x-text="getStatusIcon(result.status)"></span>
+                            <div class="flex-1">
+                                <div class="flex justify-between items-start">
+                                    <strong x-text="result.task_name"></strong>
+                                    <span class="text-sm opacity-75" x-text="formatTime(result.timestamp)"></span>
+                                </div>
+                                <div class="mt-1" x-text="result.result"></div>
+                                <div 
+                                    x-show="result.error" 
+                                    class="mt-2 text-sm opacity-75"
+                                    x-text="'Ошибка: ' + result.error"
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+                
+                <!-- Заглушка когда нет результатов -->
+                <div x-show="results.length === 0" class="text-gray-500 italic">
+                    Запустите интерактивный пайплайн для просмотра результатов
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        const socket = io();
-        let taskCount = 0;
-        let currentTaskId = null;
-
-        // Инициализация сегментированных прогресс баров
-        function initializeProgressBars() {
-            createProgressSegments('overall-progress-segments', 20, 'h-6'); // 20 сегментов для общего прогресса
-            // createProgressSegments('step-progress-segments', 10, 'h-4');    // 10 сегментов для шага
-        }
-
-        function createProgressSegments(containerId, segmentCount, heightClass) {
-            const container = document.getElementById(containerId);
-            container.innerHTML = '';
-            
-            for (let i = 0; i < segmentCount; i++) {
-                const segment = document.createElement('div');
-                segment.className = `flex-1 ${heightClass} bg-gray-200 rounded-sm transition-all duration-300 progress-segment`;
-                segment.id = `${containerId}-segment-${i}`;
-                container.appendChild(segment);
-            }
-        }
-
-        function updateSegmentedProgress(containerId, percentage, color = 'bg-green-500') {
-            const container = document.getElementById(containerId);
-            const segments = container.children;
-            const segmentCount = segments.length;
-            const filledSegments = Math.round((percentage / 100) * segmentCount);
-            
-            for (let i = 0; i < segmentCount; i++) {
-                const segment = segments[i];
-                if (i < filledSegments) {
-                    // Заполненный сегмент
-                    segment.className = segment.className.replace(/bg-\w+-\d+/, color);
-                    segment.classList.add('filled');
-                } else {
-                    // Пустой сегмент
-                    segment.className = segment.className.replace(/bg-\w+-\d+/, 'bg-gray-200');
-                    segment.classList.remove('filled');
-                }
-            }
-        }
-
-        // Подключение к WebSocket
-        socket.on('connect', function() {
-            document.getElementById('connection-status').className = 'w-3 h-3 bg-green-500 rounded-full mr-3';
-            document.getElementById('connection-text').textContent = 'Подключено';
-        });
-
-        socket.on('disconnect', function() {
-            document.getElementById('connection-status').className = 'w-3 h-3 bg-red-500 rounded-full mr-3';
-            document.getElementById('connection-text').textContent = 'Отключено';
-        });
-
-        // Получение обновлений задач
-        socket.on('task_update', function(data) {
-            if (data.status === 'input_required') {
-                showInputForm(data.request_input);
-            } else {
-                hideInputForm();
-            }
-            
-            // Обновляем прогресс
-            if (data.progress_info) {
-                updateProgress(data.progress_info);
-            }
-            
-            addTaskResult(data);
-        });
-
-        function updateProgress(progressInfo) {
-            const progressContainer = document.getElementById('progress-container');
-            progressContainer.classList.remove('hidden');
-            
-            const overallProgress = Math.round(progressInfo.overall_progress || 0);
-            const stepProgress = Math.round(progressInfo.step_progress || 0);
-            const currentStep = progressInfo.current_step || 1;
-            
-            // Обновляем сегментированные прогресс бары
-            let overallColor = 'bg-blue-500';
-            if (overallProgress >= 100) {
-                overallColor = 'bg-green-500';
-            }
-            
-            updateSegmentedProgress('overall-progress-segments', overallProgress, overallColor);
-            // updateSegmentedProgress('step-progress-segments', stepProgress, 'bg-green-500');
-            
-            // Обновляем текстовые индикаторы
-            document.getElementById('overall-progress-text').textContent = overallProgress + '%';
-            // document.getElementById('step-progress-text').textContent = stepProgress + '%';
-            
-            // Обновляем индикаторы шагов
-            for (let i = 1; i <= 4; i++) {
-                const stepElement = document.getElementById(`step-${i}`).firstElementChild;
-                if (i < currentStep) {
-                    // Завершенный шаг
-                    stepElement.className = 'w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-medium mb-2';
-                    stepElement.innerHTML = '✓';
-                } else if (i === currentStep) {
-                    // Текущий шаг
-                    stepElement.className = 'w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-medium mb-2';
-                    stepElement.innerHTML = i;
-                } else {
-                    // Будущий шаг
-                    stepElement.className = 'w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-white font-medium mb-2';
-                    stepElement.innerHTML = i;
-                }
-            }
-        }
-
-        function resetProgress() {
-            // Инициализируем сегменты заново
-            initializeProgressBars();
-            
-            // Сбрасываем текстовые индикаторы
-            document.getElementById('overall-progress-text').textContent = '0%';
-            // document.getElementById('step-progress-text').textContent = '0%';
-            
-            // Сбрасываем все индикаторы шагов
-            for (let i = 1; i <= 4; i++) {
-                const stepElement = document.getElementById(`step-${i}`).firstElementChild;
-                stepElement.className = 'w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-white font-medium mb-2';
-                stepElement.innerHTML = i;
-            }
-        }
-
-        function startPipeline() {
-            const dataSize = document.getElementById('data-size').value;
-            const button = document.getElementById('start-btn');
-            
-            button.disabled = true;
-            button.textContent = 'Запускается...';
-            
-            // Сбрасываем и инициализируем прогресс
-            resetProgress();
-            
-            fetch('/start_pipeline', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({data_size: parseInt(dataSize)})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    currentTaskId = data.task_id;
-                    addTaskResult({
-                        task_name: 'Система',
-                        result: `Интерактивный пайплайн запущен (ID: ${data.task_id})`,
-                        status: 'start',
-                        timestamp: new Date().toISOString()
-                    });
-                } else {
-                    addTaskResult({
-                        task_name: 'Система',
-                        result: `Ошибка: ${data.error}`,
-                        status: 'error',
-                        timestamp: new Date().toISOString()
-                    });
-                }
+        function pipelineApp() {
+            return {
+                // Основные данные
+                dataSize: 100,
+                isStarting: false,
+                currentTaskId: null,
+                results: [],
                 
-                button.disabled = false;
-                button.textContent = 'Запустить пайплайн';
-            });
-        }
-
-        function showInputForm(inputRequest) {
-            const form = document.getElementById('input-form');
-            const content = document.getElementById('input-content');
-            
-            let inputHtml = `
-                <p class="mb-4 text-gray-700">${inputRequest.prompt}</p>
-                <div class="mb-4">
-            `;
-            
-            if (inputRequest.input_type === 'select') {
-                inputHtml += `
-                    <select id="user-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500">
-                        ${inputRequest.options.map(option => `<option value="${option}">${option}</option>`).join('')}
-                    </select>
-                `;
-            } else if (inputRequest.input_type === 'number') {
-                inputHtml += `
-                    <input type="number" id="user-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Введите число">
-                `;
-            } else {
-                inputHtml += `
-                    <input type="text" id="user-input" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="Введите текст">
-                `;
-            }
-            
-            inputHtml += `
-                </div>
-                <button onclick="submitInput('${inputRequest.task_id}')" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-md transition-colors">
-                    Отправить
-                </button>
-            `;
-            
-            content.innerHTML = inputHtml;
-            form.classList.remove('hidden');
-        }
-
-        function hideInputForm() {
-            document.getElementById('input-form').classList.add('hidden');
-        }
-
-        function submitInput(taskId) {
-            const inputElement = document.getElementById('user-input');
-            const userInput = inputElement.value;
-            
-            if (!userInput.trim()) {
-                alert('Пожалуйста, введите значение');
-                return;
-            }
-            
-            fetch('/submit_input', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    task_id: taskId,
-                    input: userInput
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    hideInputForm();
-                    addTaskResult({
-                        task_name: 'Пользовательский ввод',
-                        result: `Отправлено: ${userInput}`,
-                        status: 'success',
-                        timestamp: new Date().toISOString()
+                // Подключение
+                connection: {
+                    connected: false,
+                    text: 'Подключение...'
+                },
+                
+                // Прогресс
+                progress: {
+                    visible: false,
+                    overall: 0,
+                    step: 0,
+                    currentStep: 1,
+                    overallSegments: [],
+                    stepSegments: [],
+                    steps: [
+                        { id: 1, name: 'Подготовка<br>данных', completed: false, current: false },
+                        { id: 2, name: 'Обработка<br>данных', completed: false, current: false },
+                        { id: 3, name: 'Анализ<br>данных', completed: false, current: false },
+                        { id: 4, name: 'Генерация<br>отчета', completed: false, current: false }
+                    ]
+                },
+                
+                // Пользовательский ввод
+                input: {
+                    visible: false,
+                    prompt: '',
+                    type: 'text',
+                    value: '',
+                    options: [],
+                    taskId: null,
+                    submitting: false
+                },
+                
+                // WebSocket
+                socket: null,
+                
+                // Инициализация
+                init() {
+                    this.initializeProgressSegments();
+                    this.initializeWebSocket();
+                },
+                
+                // Инициализация сегментов прогресса
+                initializeProgressSegments() {
+                    this.progress.overallSegments = Array.from({ length: 20 }, (_, i) => ({
+                        id: i,
+                        filled: false
+                    }));
+                    
+                    this.progress.stepSegments = Array.from({ length: 10 }, (_, i) => ({
+                        id: i,
+                        filled: false
+                    }));
+                },
+                
+                // Инициализация WebSocket
+                initializeWebSocket() {
+                    this.socket = io();
+                    
+                    this.socket.on('connect', () => {
+                        this.connection.connected = true;
+                        this.connection.text = 'Подключено';
                     });
-                } else {
-                    alert('Ошибка отправки ввода: ' + data.error);
+                    
+                    this.socket.on('disconnect', () => {
+                        this.connection.connected = false;
+                        this.connection.text = 'Отключено';
+                    });
+                    
+                    this.socket.on('task_update', (data) => {
+                        this.handleTaskUpdate(data);
+                    });
+                },
+                
+                // Обработка обновлений задач
+                handleTaskUpdate(data) {
+                    if (data.status === 'input_required') {
+                        this.showInputForm(data.request_input);
+                    } else {
+                        this.hideInputForm();
+                    }
+                    
+                    if (data.progress_info) {
+                        this.updateProgress(data.progress_info);
+                    }
+                    
+                    this.addTaskResult(data);
+                },
+                
+                // Запуск пайплайна
+                async startPipeline() {
+                    this.isStarting = true;
+                    this.resetProgress();
+                    
+                    try {
+                        const response = await fetch('/start_pipeline', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ data_size: parseInt(this.dataSize) })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.currentTaskId = data.task_id;
+                            this.addTaskResult({
+                                task_name: 'Система',
+                                result: `Интерактивный пайплайн запущен (ID: ${data.task_id})`,
+                                status: 'start',
+                                timestamp: new Date().toISOString()
+                            });
+                        } else {
+                            this.addTaskResult({
+                                task_name: 'Система',
+                                result: `Ошибка: ${data.error}`,
+                                status: 'error',
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                    } catch (error) {
+                        this.addTaskResult({
+                            task_name: 'Система',
+                            result: `Ошибка запуска: ${error.message}`,
+                            status: 'error',
+                            timestamp: new Date().toISOString()
+                        });
+                    } finally {
+                        this.isStarting = false;
+                    }
+                },
+                
+                // Обновление прогресса
+                updateProgress(progressInfo) {
+                    this.progress.visible = true;
+                    this.progress.overall = Math.round(progressInfo.overall_progress || 0);
+                    this.progress.step = Math.round(progressInfo.step_progress || 0);
+                    this.progress.currentStep = progressInfo.current_step || 1;
+                    
+                    this.updateSegments();
+                    this.updateStepIndicators();
+                },
+                
+                // Обновление сегментов
+                updateSegments() {
+                    // Обновление общего прогресса
+                    const overallFilledCount = Math.round((this.progress.overall / 100) * this.progress.overallSegments.length);
+                    this.progress.overallSegments.forEach((segment, index) => {
+                        segment.filled = index < overallFilledCount;
+                    });
+                    
+                    // Обновление прогресса шага
+                    const stepFilledCount = Math.round((this.progress.step / 100) * this.progress.stepSegments.length);
+                    this.progress.stepSegments.forEach((segment, index) => {
+                        segment.filled = index < stepFilledCount;
+                    });
+                },
+                
+                // Обновление индикаторов шагов
+                updateStepIndicators() {
+                    this.progress.steps.forEach(step => {
+                        step.completed = step.id < this.progress.currentStep;
+                        step.current = step.id === this.progress.currentStep;
+                    });
+                },
+                
+                // Отображение формы ввода
+                showInputForm(inputRequest) {
+                    this.input.visible = true;
+                    this.input.prompt = inputRequest.prompt;
+                    this.input.type = inputRequest.input_type;
+                    this.input.options = inputRequest.options || [];
+                    this.input.taskId = inputRequest.task_id;
+                    this.input.value = inputRequest.input_type === 'select' ? inputRequest.options[0] : '';
+                    this.input.submitting = false;
+                },
+                
+                // Скрытие формы ввода
+                hideInputForm() {
+                    this.input.visible = false;
+                    this.input.value = '';
+                    this.input.submitting = false;
+                },
+                
+                // Отправка пользовательского ввода
+                async submitInput() {
+                    if (!this.input.value || this.input.submitting) return;
+                    
+                    this.input.submitting = true;
+                    
+                    try {
+                        const response = await fetch('/submit_input', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                task_id: this.input.taskId,
+                                input: this.input.value
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.hideInputForm();
+                            this.addTaskResult({
+                                task_name: 'Пользовательский ввод',
+                                result: `Отправлено: ${this.input.value}`,
+                                status: 'success',
+                                timestamp: new Date().toISOString()
+                            });
+                        } else {
+                            alert('Ошибка отправки ввода: ' + data.error);
+                        }
+                    } catch (error) {
+                        alert('Ошибка отправки ввода: ' + error.message);
+                    } finally {
+                        this.input.submitting = false;
+                    }
+                },
+                
+                // Добавление результата задачи
+                addTaskResult(data) {
+                    const result = {
+                        id: Date.now() + Math.random(),
+                        task_name: data.task_name,
+                        result: data.result,
+                        status: data.status,
+                        timestamp: data.timestamp,
+                        error: data.error
+                    };
+                    
+                    this.results.push(result);
+                    
+                    // Автоскролл к последнему результату
+                    this.$nextTick(() => {
+                        const lastResult = this.$el.querySelector('.space-y-3 > div:last-child');
+                        if (lastResult) {
+                            lastResult.scrollIntoView({ behavior: 'smooth' });
+                        }
+                    });
+                },
+                
+                // Сброс прогресса
+                resetProgress() {
+                    this.progress.overall = 0;
+                    this.progress.step = 0;
+                    this.progress.currentStep = 1;
+                    this.initializeProgressSegments();
+                    this.progress.steps.forEach(step => {
+                        step.completed = false;
+                        step.current = false;
+                    });
+                },
+                
+                // Очистка результатов
+                clearResults() {
+                    this.results = [];
+                    this.hideInputForm();
+                    this.resetProgress();
+                    this.progress.visible = false;
+                },
+                
+                // Получение класса для шага
+                getStepClass(step) {
+                    if (step.completed) {
+                        return 'bg-green-500';
+                    } else if (step.current) {
+                        return 'bg-blue-500';
+                    } else {
+                        return 'bg-gray-300';
+                    }
+                },
+                
+                // Получение класса для результата
+                getResultClass(status) {
+                    const classes = {
+                        'start': 'bg-blue-50 border-blue-200 text-blue-800',
+                        'progress': 'bg-yellow-50 border-yellow-200 text-yellow-800',
+                        'success': 'bg-green-50 border-green-200 text-green-800',
+                        'error': 'bg-red-50 border-red-200 text-red-800',
+                        'input_required': 'bg-orange-50 border-orange-200 text-orange-800',
+                        'completed': 'bg-green-50 border-green-200 text-green-800',
+                        'timeout': 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                    };
+                    
+                    return classes[status] || 'bg-gray-50 border-gray-200 text-gray-800';
+                },
+                
+                // Получение иконки для статуса
+                getStatusIcon(status) {
+                    const icons = {
+                        'start': '🚀',
+                        'progress': '⏳',
+                        'success': '✅',
+                        'error': '❌',
+                        'input_required': '⏸️',
+                        'completed': '🎉',
+                        'timeout': '⏰'
+                    };
+                    
+                    return icons[status] || 'ℹ️';
+                },
+                
+                // Форматирование времени
+                formatTime(timestamp) {
+                    return new Date(timestamp).toLocaleTimeString();
                 }
-            });
-        }
-
-        function addTaskResult(data) {
-            taskCount++;
-            const container = document.getElementById('results-container');
-            
-            // Удаляем сообщение-заглушку при первом результате
-            if (taskCount === 1) {
-                container.innerHTML = '';
             }
-            
-            const timestamp = new Date(data.timestamp).toLocaleTimeString();
-            let statusClass, statusIcon;
-            
-            switch(data.status) {
-                case 'start':
-                    statusClass = 'bg-blue-50 border-blue-200 text-blue-800';
-                    statusIcon = '🚀';
-                    break;
-                case 'progress':
-                    statusClass = 'bg-yellow-50 border-yellow-200 text-yellow-800';
-                    statusIcon = '⏳';
-                    break;
-                case 'success':
-                    statusClass = 'bg-green-50 border-green-200 text-green-800';
-                    statusIcon = '✅';
-                    break;
-                case 'error':
-                    statusClass = 'bg-red-50 border-red-200 text-red-800';
-                    statusIcon = '❌';
-                    break;
-                case 'input_required':
-                    statusClass = 'bg-orange-50 border-orange-200 text-orange-800';
-                    statusIcon = '⏸️';
-                    break;
-                case 'completed':
-                    statusClass = 'bg-green-50 border-green-200 text-green-800';
-                    statusIcon = '🎉';
-                    break;
-                case 'timeout':
-                    statusClass = 'bg-yellow-50 border-yellow-200 text-yellow-800';
-                    statusIcon = '⏰';
-                    break;
-                default:
-                    statusClass = 'bg-gray-50 border-gray-200 text-gray-800';
-                    statusIcon = 'ℹ️';
-            }
-            
-            const resultElement = document.createElement('div');
-            resultElement.className = `p-4 border rounded-lg ${statusClass}`;
-            resultElement.innerHTML = `
-                <div class="flex items-start">
-                    <span class="text-lg mr-3">${statusIcon}</span>
-                    <div class="flex-1">
-                        <div class="flex justify-between items-start">
-                            <strong>${data.task_name}</strong>
-                            <span class="text-sm opacity-75">${timestamp}</span>
-                        </div>
-                        <div class="mt-1">${data.result}</div>
-                        ${data.error ? `<div class="mt-2 text-sm opacity-75">Ошибка: ${data.error}</div>` : ''}
-                    </div>
-                </div>
-            `;
-            
-            container.appendChild(resultElement);
-            
-            // Автоскролл к последнему результату
-            resultElement.scrollIntoView({ behavior: 'smooth' });
         }
-
-        function clearResults() {
-            taskCount = 0;
-            hideInputForm();
-            resetProgress();
-            document.getElementById('progress-container').classList.add('hidden');
-            document.getElementById('results-container').innerHTML = 
-                '<p class="text-gray-500 italic">Запустите интерактивный пайплайн для просмотра результатов</p>';
-        }
-
-        // Инициализация при загрузке страницы
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeProgressBars();
-        });
     </script>
 </body>
 </html>

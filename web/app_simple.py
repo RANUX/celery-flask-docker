@@ -5,7 +5,7 @@ sys.path.append('../app')
 
 from tasks_simple import add, sleep, echo, error
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 
 @app.route('/')
 def index():
